@@ -1,6 +1,8 @@
 mod styling;
 
-use iced::{font, window, Application, Command, Font, Length, Settings, Subscription};
+use iced::{
+    font, widget::Rule, window, Application, Command, Font, Length, Settings, Subscription,
+};
 use kira::{
     manager::{backend::DefaultBackend, AudioManager, AudioManagerSettings},
     sound::{
@@ -10,20 +12,18 @@ use kira::{
     tween::Tween,
     Volume,
 };
-use lofty::{AudioFile, Probe, TaggedFileExt};
+use lofty::{AudioFile, Probe};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, time::Duration};
 
 const FONT_BYTES_REGULAR: &[u8] = include_bytes!("../fonts/Roboto/Roboto-Regular.ttf");
 const FONT_BYTES_BOLD: &[u8] = include_bytes!("../fonts/Roboto/Roboto-Bold.ttf");
-const ICONS_FONT_BYTES: &[u8] = include_bytes!("../fonts/icons.ttf");
+const FONT_BYTES_ICONS: &[u8] = include_bytes!("../fonts/icons.ttf");
 
 const FONT_NAME: &'static str = "Roboto";
-const TOOLBAR_FONT_SIZE: u16 = 14;
-const CONTENT_FONT_SIZE: u16 = 16;
-const FOOTER_FONT_SIZE: u16 = 12;
-const LOADING_INDICATOR_SIZE: f32 = 120.0;
-const LOADING_INDICATOR_SPEED_MS: u64 = 100;
+const FONT_SIZE_DEFAULT: u16 = 16;
+const FONT_SIZE_TOOLBAR: u16 = 14;
+const FONT_SIZE_ICON: u16 = 26;
 
 const TITLE: &'static str = "Soundboard";
 
@@ -58,12 +58,13 @@ fn main() -> iced::Result {
             ..Default::default()
         },
         default_font: Font::with_name(FONT_NAME),
+        default_text_size: FONT_SIZE_DEFAULT as f32,
         ..Default::default()
     })
 }
 
 #[derive(Debug, Clone)]
-enum AudioCommand {
+pub enum AudioCommand {
     Play,
     Pause,
     Stop,
@@ -76,14 +77,14 @@ struct AudioPlayback {
 }
 
 #[derive(Debug, Clone)]
-struct AudioClip {
+pub struct AudioClip {
     name: String,
     path: std::path::PathBuf,
     duration: Duration,
 }
 
 #[derive(Debug, Clone)]
-enum Message {
+pub enum Message {
     FontLoaded(Result<(), font::Error>),
     Saved(Result<(), SaveError>),
     Loaded(Result<SavedState, LoadError>),
@@ -167,10 +168,10 @@ impl SoundboardApp {
 
         let text = iced::widget::text("Open".to_uppercase())
             .font(self.bold_font())
-            .size(TOOLBAR_FONT_SIZE);
+            .size(FONT_SIZE_TOOLBAR);
         let button = iced::widget::button(text)
             .on_press(Message::SelectDirectory)
-            .style(styling::ToolbarButton::default().into());
+            .style(styling::CustomButton::toolbar().into());
         row = row.push(button);
 
         row = row
@@ -188,128 +189,179 @@ impl SoundboardApp {
     }
 
     fn view_content<'a>(&'a self, state: &'a AppState) -> iced::Element<Message> {
-        let volume_slider =
-            iced::widget::slider(0.0..=1.0, state.global_volume, Message::VolumeChanged)
-                .step(0.001)
-                .on_release(Message::SetDirty);
-        let speed_slider =
-            iced::widget::slider(0.0..=2.0, state.global_speed, Message::SpeedChanged)
-                .step(0.001)
-                .on_release(Message::SetDirty);
-        let buttons_column: iced::Element<Message> = iced::widget::column(
-            state
-                .clips
-                .iter()
-                .map(|clip| {
-                    let row = iced::widget::row!(
-                        iced::widget::text(clip.name.as_str()),
-                        iced::widget::horizontal_space(iced::Length::Fill),
-                        iced::widget::text(format_seconds_to_time(clip.duration.as_secs_f64())),
-                    );
-                    iced::widget::button(row)
-                        .width(iced::Length::Fill)
-                        .on_press(Message::StartPlayback(clip.clone()))
-                        .into()
-                })
-                .collect(),
-        )
-        .spacing(10)
-        .into();
+        let sliders_column = {
+            let volume_row = {
+                let label_row = {
+                    let icon = icons::volume_up();
+                    let label = iced::widget::text("Volume");
 
-        let buttons_scrollable = iced::widget::scrollable(buttons_column)
-            .width(iced::Length::Fill)
-            .height(iced::Length::Fill);
+                    iced::widget::row!(icon, label)
+                        .width(iced::Length::Fixed(76.0))
+                        .spacing(SPACING_SMALL)
+                };
+                let slider =
+                    iced::widget::slider(0.0..=1.0, state.global_volume, Message::VolumeChanged)
+                        .step(0.001)
+                        .on_release(Message::SetDirty);
+                let value = iced::widget::text(format!("{:.0}%", state.global_volume * 100.0))
+                    .width(iced::Length::Fixed(32.0))
+                    .horizontal_alignment(iced::alignment::Horizontal::Center);
+                iced::widget::row!(label_row, slider, value)
+                    .spacing(SPACING_NORMAL)
+                    .align_items(iced::Alignment::Center)
+            };
+            let speed_row = {
+                let label_row = {
+                    let icon = icons::speed();
+                    let label = iced::widget::text("Speed");
 
-        let controls_column: iced::Element<Message> = iced::widget::column(
-            state
-                .active_playbacks
-                .iter()
-                .map(|(id, playback)| {
-                    let play_button = iced::widget::button("Play")
-                        .on_press(Message::AudioEvent(*id, AudioCommand::Play));
-                    let pause_button = iced::widget::button("Pause")
-                        .on_press(Message::AudioEvent(*id, AudioCommand::Pause));
-                    let control_button = if playback.sound_handle.state() == PlaybackState::Playing
-                    {
-                        pause_button
-                    } else {
-                        play_button
-                    };
+                    iced::widget::row!(icon, label)
+                        .width(iced::Length::Fixed(76.0))
+                        .spacing(SPACING_SMALL)
+                };
 
-                    let slider = iced::widget::slider(
-                        0.0..=playback.clip.duration.as_secs_f64(),
-                        playback.sound_handle.position(),
-                        |value| Message::AudioEvent(*id, AudioCommand::Seek(value)),
-                    )
-                    .step(0.001);
+                let slider =
+                    iced::widget::slider(0.0..=2.0, state.global_speed, Message::SpeedChanged)
+                        .step(0.001)
+                        .on_release(Message::SetDirty);
+                let value = iced::widget::text(format!("{:.0}%", state.global_speed * 100.0))
+                    .width(iced::Length::Fixed(32.0))
+                    .horizontal_alignment(iced::alignment::Horizontal::Center);
+                iced::widget::row!(label_row, slider, value)
+                    .spacing(SPACING_NORMAL)
+                    .align_items(iced::Alignment::Center)
+            };
 
-                    let text = iced::widget::text(format!(
-                        "{}/{}",
-                        format_seconds_to_time(playback.sound_handle.position()),
-                        format_seconds_to_time(playback.clip.duration.as_secs_f64()),
-                    ));
+            iced::widget::column!(volume_row, speed_row)
+                .spacing(SPACING_NORMAL)
+                .padding([0, SPACING_LARGE])
+        };
 
-                    let stop_button = iced::widget::button("Stop")
-                        .on_press(Message::AudioEvent(*id, AudioCommand::Stop));
+        let buttons_scrollable = {
+            let column: iced::Element<Message> = iced::widget::column(
+                state
+                    .clips
+                    .iter()
+                    .map(|clip| {
+                        let row = iced::widget::row!(
+                            iced::widget::text(clip.name.as_str()),
+                            iced::widget::horizontal_space(iced::Length::Fill),
+                            iced::widget::text(format_seconds_to_time(clip.duration.as_secs_f64())),
+                        )
+                        .align_items(iced::Alignment::Center);
+                        iced::widget::button(row)
+                            .width(iced::Length::Fill)
+                            .height(iced::Length::Fixed(48.0))
+                            .on_press(Message::StartPlayback(clip.clone()))
+                            .style(styling::CustomButton::default().into())
+                            .into()
+                    })
+                    .collect(),
+            )
+            // .spacing(SPACING_SMALL)
+            .padding([0, SPACING_LARGE])
+            .into();
 
-                    let row =
-                        iced::widget::row!(control_button, slider, text, stop_button).spacing(10);
-                    iced::widget::container(row).into()
-                })
-                .collect(),
-        )
-        .spacing(10)
-        .into();
-        let controls_scrollable =
-            iced::widget::scrollable(controls_column).width(iced::Length::Fill);
+            iced::widget::scrollable(column)
+                .width(iced::Length::Fill)
+                .height(iced::Length::Fill)
+        };
 
-        let main_column = iced::widget::column!(
-            volume_slider,
-            speed_slider,
-            buttons_scrollable,
-            controls_scrollable
-        )
-        .spacing(10);
+        let column =
+            iced::widget::column!(sliders_column, buttons_scrollable).spacing(SPACING_NORMAL);
 
-        iced::widget::container(main_column)
+        iced::widget::container(column)
             .width(iced::Length::Fill)
             .height(iced::Length::Fill)
-            .padding([SPACING_NORMAL, SPACING_LARGE])
+            .padding([SPACING_NORMAL, 0, 0, 0])
             .center_x()
             .center_y()
             .into()
     }
 
-    fn view_footer(&self) -> iced::Element<'_, Message> {
-        let status_message = "Status message";
+    fn view_clips<'a>(&'a self, state: &'a AppState) -> iced::Element<Message> {
+        let clips_scrollable = {
+            let column = iced::widget::column(
+                state
+                    .active_playbacks
+                    .iter()
+                    .rev()
+                    .map(|(id, playback)| {
+                        const BUTTON_WIDTH: iced::Length = iced::Length::Fixed(26.0);
+                        const BUTTON_HEIGHT: iced::Length = iced::Length::Fixed(26.0);
 
-        let text = iced::widget::text(status_message)
-            .font(self.font())
-            .size(FOOTER_FONT_SIZE);
+                        let title = iced::widget::text(
+                            truncate_text(playback.clip.name.as_str(), 16).as_str(),
+                        )
+                        .width(iced::Length::Fixed(128.0));
+                        let play_button = iced::widget::button(icons::play())
+                            .width(BUTTON_WIDTH)
+                            .height(BUTTON_HEIGHT)
+                            .on_press(Message::AudioEvent(*id, AudioCommand::Play))
+                            .style(styling::CustomButton::default().into());
+                        let pause_button = iced::widget::button(icons::pause())
+                            .width(BUTTON_WIDTH)
+                            .height(BUTTON_HEIGHT)
+                            .on_press(Message::AudioEvent(*id, AudioCommand::Pause))
+                            .style(styling::CustomButton::default().into());
+                        let control_button =
+                            if playback.sound_handle.state() == PlaybackState::Playing {
+                                pause_button
+                            } else {
+                                play_button
+                            };
+                        let slider = iced::widget::slider(
+                            0.0..=playback.clip.duration.as_secs_f64(),
+                            playback.sound_handle.position(),
+                            |value| Message::AudioEvent(*id, AudioCommand::Seek(value)),
+                        )
+                        .step(0.001);
+                        let playback_position = iced::widget::text(format_seconds_to_time(
+                            playback.sound_handle.position(),
+                        ));
+                        let playback_duration = iced::widget::text(format_seconds_to_time(
+                            playback.clip.duration.as_secs_f64(),
+                        ));
+                        let stop_button = iced::widget::button(icons::stop())
+                            .width(BUTTON_WIDTH)
+                            .height(BUTTON_HEIGHT)
+                            .on_press(Message::AudioEvent(*id, AudioCommand::Stop))
+                            .style(styling::CustomButton::default().into());
 
-        let mut row = iced::widget::Row::new()
-            .width(iced::Length::Fill)
+                        iced::widget::row!(
+                            title,
+                            control_button,
+                            playback_position,
+                            slider,
+                            playback_duration,
+                            stop_button
+                        )
+                        .spacing(SPACING_NORMAL)
+                        .align_items(iced::Alignment::Center)
+                        .into()
+                    })
+                    .collect(),
+            )
             .spacing(SPACING_SMALL)
-            .align_items(iced::Alignment::Center);
+            .padding([SPACING_SMALL, SPACING_LARGE]);
 
-        row = row.push(text);
+            iced::widget::scrollable(column).width(iced::Length::Fill)
+        };
 
-        iced::widget::container(row)
-            .padding([SPACING_SMALL, SPACING_LARGE])
-            .height(iced::Length::Shrink)
+        iced::widget::container(clips_scrollable)
             .width(iced::Length::Fill)
             .into()
     }
 
     fn view_full<'a>(&'a self, state: &'a AppState) -> iced::Element<Message> {
         let toolbar = self.view_toolbar();
-        let footer = self.view_footer();
-        // let divider_toolbar =
-        //     iced::widget::horizontal_rule(0).style(styling::CustomRule::dark().move_to_style());
+        let divider_toolbar: Rule =
+            iced::widget::horizontal_rule(0).style(styling::CustomRule::default().move_to_style());
 
         let content = self.view_content(state);
+        let clips = self.view_clips(state);
 
-        let column = iced::widget::column!(toolbar, content, footer)
+        let column = iced::widget::column!(toolbar, divider_toolbar, content, clips)
             .width(iced::Length::Fill)
             .height(iced::Length::Fill)
             .align_items(iced::Alignment::Center)
@@ -329,10 +381,13 @@ impl Application for SoundboardApp {
     type Theme = iced::theme::Theme;
 
     fn new(_flags: ()) -> (Self, Command<Message>) {
-        let mut commands: Vec<iced::Command<Message>> = vec![FONT_BYTES_REGULAR, FONT_BYTES_BOLD]
-            .iter()
-            .map(|&bytes| iced::font::load(std::borrow::Cow::from(bytes)).map(Message::FontLoaded))
-            .collect();
+        let mut commands: Vec<iced::Command<Message>> =
+            vec![FONT_BYTES_REGULAR, FONT_BYTES_BOLD, FONT_BYTES_ICONS]
+                .iter()
+                .map(|&bytes| {
+                    iced::font::load(std::borrow::Cow::from(bytes)).map(Message::FontLoaded)
+                })
+                .collect();
         commands.push(iced::Command::perform(SavedState::load(), Message::Loaded));
 
         (SoundboardApp::Loading, iced::Command::batch(commands))
@@ -548,20 +603,20 @@ impl Application for SoundboardApp {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct SavedState {
+pub struct SavedState {
     directory: Option<std::path::PathBuf>,
     global_volume: f64,
     global_speed: f64,
 }
 
 #[derive(Debug, Clone)]
-enum LoadError {
+pub enum LoadError {
     File,
     Format,
 }
 
 #[derive(Debug, Clone)]
-enum SaveError {
+pub enum SaveError {
     File,
     Write,
     Format,
@@ -675,4 +730,70 @@ fn format_seconds_to_time(seconds: f64) -> String {
     let seconds = total_seconds % 60;
 
     format!("{:02}:{:02}", minutes, seconds)
+}
+
+fn truncate_text(text: &str, max_length: usize) -> String {
+    if text.len() > max_length && max_length > 3 {
+        format!("{}...", &text[..max_length - 3])
+    } else {
+        text.to_string()
+    }
+}
+
+mod icons {
+    use iced::{Element, Font};
+
+    use crate::{Message, FONT_SIZE_ICON};
+
+    fn icon<'a>(codepoint: char) -> iced::widget::Text<'a> {
+        const ICON_FONT: Font = Font::with_name("soundboard-icons");
+        iced::widget::text(codepoint)
+            .font(ICON_FONT)
+            .horizontal_alignment(iced::alignment::Horizontal::Center)
+            .vertical_alignment(iced::alignment::Vertical::Center)
+    }
+
+    pub fn play<'a>() -> Element<'a, Message> {
+        icon('\u{e800}').size(FONT_SIZE_ICON).into()
+    }
+
+    pub fn pause<'a>() -> Element<'a, Message> {
+        icon('\u{e802}').size(FONT_SIZE_ICON).into()
+    }
+
+    pub fn stop<'a>() -> Element<'a, Message> {
+        icon('\u{e801}').size(FONT_SIZE_ICON).into()
+    }
+
+    pub fn volume_off<'a>() -> Element<'a, Message> {
+        icon('\u{e803}').into()
+    }
+
+    pub fn volume_up<'a>() -> Element<'a, Message> {
+        icon('\u{e805}').into()
+    }
+
+    pub fn volume_down<'a>() -> Element<'a, Message> {
+        icon('\u{e804}').into()
+    }
+
+    pub fn plus<'a>() -> Element<'a, Message> {
+        icon('\u{e806}').into()
+    }
+
+    pub fn cog<'a>() -> Element<'a, Message> {
+        icon('\u{e807}').into()
+    }
+
+    pub fn repeat<'a>() -> Element<'a, Message> {
+        icon('\u{e808}').into()
+    }
+
+    pub fn cancel<'a>() -> Element<'a, Message> {
+        icon('\u{e809}').into()
+    }
+
+    pub fn speed<'a>() -> Element<'a, Message> {
+        icon('\u{e80a}').into()
+    }
 }

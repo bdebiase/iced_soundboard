@@ -12,7 +12,7 @@ impl CustomTheme {
         Self {
             background: iced::Color::from_rgba8(30, 30, 30, 1.0),
             text: iced::Color::from_rgba8(221, 221, 221, 1.0),
-            primary: iced::Color::from_rgba8(10, 132, 255, 1.0),
+            primary: iced::Color::from_rgba8(255, 132, 255, 1.0),
             success: iced::Color::from_rgba8(48, 209, 81, 1.0),
             danger: iced::Color::from_rgba8(255, 69, 58, 1.0),
         }
@@ -30,63 +30,65 @@ impl CustomTheme {
 }
 
 #[derive(Default)]
-pub enum ToolbarButtonStyle {
+enum CustomButtonStyle {
     #[default]
     Default,
-    Destructive,
-    Text,
+    Toolbar,
 }
 
-pub struct ToolbarButton(ToolbarButtonStyle);
+#[derive(Default)]
+pub struct CustomButton(CustomButtonStyle);
 
-impl Default for ToolbarButton {
-    fn default() -> Self {
-        Self(ToolbarButtonStyle::Default)
+impl CustomButton {
+    pub fn toolbar() -> Self {
+        Self(CustomButtonStyle::Toolbar)
     }
 }
 
-impl ToolbarButton {
-    pub fn destructive() -> Self {
-        Self(ToolbarButtonStyle::Destructive)
-    }
-
-    pub fn text() -> Self {
-        Self(ToolbarButtonStyle::Text)
-    }
-}
-
-impl std::convert::From<ToolbarButton> for iced::theme::Button {
-    fn from(value: ToolbarButton) -> Self {
+impl std::convert::From<CustomButton> for iced::theme::Button {
+    fn from(value: CustomButton) -> Self {
         iced::theme::Button::Custom(Box::new(value))
     }
 }
 
-impl iced::widget::button::StyleSheet for ToolbarButton {
+impl iced::widget::button::StyleSheet for CustomButton {
     type Style = iced::theme::Theme;
 
     fn active(&self, style: &Self::Style) -> iced::widget::button::Appearance {
-        let color = match self.0 {
-            ToolbarButtonStyle::Default => style.extended_palette().primary.strong.color,
-            ToolbarButtonStyle::Text => style.palette().text,
-            ToolbarButtonStyle::Destructive => style.extended_palette().danger.strong.color,
-        };
-
-        iced::widget::button::Appearance {
-            text_color: color,
-            ..Default::default()
+        match self.0 {
+            CustomButtonStyle::Default => iced::widget::button::Appearance {
+                background: Some(iced::Background::Color(iced::Color::TRANSPARENT)),
+                text_color: style.palette().text,
+                border_radius: 0.0.into(),
+                ..Default::default()
+            },
+            CustomButtonStyle::Toolbar => iced::widget::button::Appearance {
+                text_color: style.extended_palette().primary.strong.color,
+                ..Default::default()
+            },
         }
     }
 
     fn hovered(&self, style: &Self::Style) -> iced::widget::button::Appearance {
-        let color = match self.0 {
-            ToolbarButtonStyle::Default => style.extended_palette().primary.base.color,
-            ToolbarButtonStyle::Text => style.palette().text,
-            ToolbarButtonStyle::Destructive => style.extended_palette().danger.base.color,
-        };
+        match self.0 {
+            CustomButtonStyle::Default => iced::widget::button::Appearance {
+                background: Some(iced::Background::Color(iced::Color::from_rgba(
+                    1.0, 1.0, 1.0, 0.125,
+                ))),
+                text_color: style.palette().text,
+                border_radius: 0.0.into(),
+                ..Default::default()
+            },
+            CustomButtonStyle::Toolbar => iced::widget::button::Appearance {
+                text_color: style.extended_palette().primary.base.color,
+                ..Default::default()
+            },
+        }
+    }
 
-        iced::widget::button::Appearance {
-            text_color: color,
-            ..Default::default()
+    fn pressed(&self, style: &Self::Style) -> iced::widget::button::Appearance {
+        match self.0 {
+            _ => self.hovered(style),
         }
     }
 }
