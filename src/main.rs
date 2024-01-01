@@ -1,20 +1,18 @@
 mod styling;
 
-use std::collections::BTreeMap;
-
 use iced::{font, window, Application, Command, Font, Length, Settings, Subscription};
-
 use kira::{
     manager::{backend::DefaultBackend, AudioManager, AudioManagerSettings},
     sound::{
-        static_sound::{StaticSoundData, StaticSoundSettings},
         streaming::{StreamingSoundData, StreamingSoundHandle, StreamingSoundSettings},
         FromFileError, PlaybackRate, PlaybackState,
     },
     tween::Tween,
     Volume,
 };
+use lofty::{AudioFile, Probe, TaggedFileExt};
 use serde::{Deserialize, Serialize};
+use std::{collections::BTreeMap, time::Duration};
 
 const FONT_BYTES_REGULAR: &[u8] = include_bytes!("../fonts/Roboto/Roboto-Regular.ttf");
 const FONT_BYTES_BOLD: &[u8] = include_bytes!("../fonts/Roboto/Roboto-Bold.ttf");
@@ -73,22 +71,32 @@ enum AudioCommand {
 }
 
 struct AudioPlayback {
+    clip: AudioClip,
     sound_handle: StreamingSoundHandle<FromFileError>,
-    duration: f64,
+}
+
+#[derive(Debug, Clone)]
+struct AudioClip {
+    name: String,
+    path: std::path::PathBuf,
+    duration: Duration,
 }
 
 #[derive(Debug, Clone)]
 enum Message {
-    Loaded(Result<SavedState, LoadError>),
-    Saved(Result<(), SaveError>),
-    SetDirty,
     FontLoaded(Result<(), font::Error>),
+    Saved(Result<(), SaveError>),
+    Loaded(Result<SavedState, LoadError>),
     SelectDirectory,
-    DirectorySelected(Option<std::path::PathBuf>),
+    DirectoryLoaded(Option<std::path::PathBuf>),
+
     VolumeChanged(f64),
     SpeedChanged(f64),
-    StartPlayback(std::path::PathBuf),
+    SetDirty,
+
+    AudioClipsLoaded,
     AudioEvent(usize, AudioCommand),
+    StartPlayback(AudioClip),
     UpdatePlaybacks,
 }
 
@@ -99,7 +107,7 @@ enum SoundboardApp {
 
 struct AppState {
     directory: Option<std::path::PathBuf>,
-    files: Vec<std::path::PathBuf>,
+    clips: Vec<AudioClip>,
     audio_manager: Option<AudioManager>,
     active_playbacks: BTreeMap<usize, AudioPlayback>,
     next_id: usize,
@@ -113,7 +121,7 @@ impl Default for AppState {
     fn default() -> Self {
         Self {
             directory: Default::default(),
-            files: Default::default(),
+            clips: Default::default(),
             audio_manager: Default::default(),
             active_playbacks: Default::default(),
             next_id: 0,
@@ -190,13 +198,17 @@ impl SoundboardApp {
                 .on_release(Message::SetDirty);
         let buttons_column: iced::Element<Message> = iced::widget::column(
             state
-                .files
+                .clips
                 .iter()
-                .map(|path| {
-                    let text = iced::widget::text(path.file_name().unwrap().to_str().unwrap());
-                    iced::widget::button(text)
+                .map(|clip| {
+                    let row = iced::widget::row!(
+                        iced::widget::text(clip.name.as_str()),
+                        iced::widget::horizontal_space(iced::Length::Fill),
+                        iced::widget::text(format_seconds_to_time(clip.duration.as_secs_f64())),
+                    );
+                    iced::widget::button(row)
                         .width(iced::Length::Fill)
-                        .on_press(Message::StartPlayback(path.clone()))
+                        .on_press(Message::StartPlayback(clip.clone()))
                         .into()
                 })
                 .collect(),
@@ -225,16 +237,16 @@ impl SoundboardApp {
                     };
 
                     let slider = iced::widget::slider(
-                        0.0..=playback.duration,
+                        0.0..=playback.clip.duration.as_secs_f64(),
                         playback.sound_handle.position(),
                         |value| Message::AudioEvent(*id, AudioCommand::Seek(value)),
                     )
                     .step(0.001);
 
                     let text = iced::widget::text(format!(
-                        "{:.2}:{:.2}",
-                        playback.sound_handle.position(),
-                        playback.duration,
+                        "{}/{}",
+                        format_seconds_to_time(playback.sound_handle.position()),
+                        format_seconds_to_time(playback.clip.duration.as_secs_f64()),
                     ));
 
                     let stop_button = iced::widget::button("Stop")
@@ -343,51 +355,57 @@ impl Application for SoundboardApp {
 
     fn update(&mut self, message: Message) -> Command<Message> {
         match self {
-            SoundboardApp::Loading => {
-                match message {
-                    Message::Loaded(Ok(state)) => {
-                        let audio_manager =
-                            AudioManager::<DefaultBackend>::new(AudioManagerSettings::default())
-                                .unwrap();
-                        let files = if let Some(dir) = state.directory.clone() {
-                            get_files_from_dir(dir)
-                        } else {
-                            vec![]
-                        };
-
+            SoundboardApp::Loading => match message {
+                Message::Loaded(Ok(state)) => {
+                    let audio_manager =
+                        AudioManager::<DefaultBackend>::new(AudioManagerSettings::default())
+                            .unwrap();
+                    if state.directory.is_some() {
                         *self = SoundboardApp::Loaded(AppState {
-                            directory: state.directory,
-                            files,
+                            directory: state.directory.clone(),
                             audio_manager: Some(audio_manager),
                             global_speed: state.global_speed,
                             global_volume: state.global_volume,
                             ..Default::default()
                         });
-                    }
-                    Message::Loaded(Err(_)) => {
-                        let audio_manager =
-                            AudioManager::<DefaultBackend>::new(AudioManagerSettings::default())
-                                .unwrap();
+
+                        // send DirectorySelected message immediately
+                        iced::Command::perform(
+                            async { Message::DirectoryLoaded(state.directory) },
+                            |message| message,
+                        )
+                    } else {
                         *self = SoundboardApp::Loaded(AppState {
+                            directory: state.directory,
+                            clips: vec![],
                             audio_manager: Some(audio_manager),
+                            global_speed: state.global_speed,
+                            global_volume: state.global_volume,
                             ..Default::default()
                         });
+
+                        iced::Command::none()
                     }
-                    _ => {}
                 }
-                iced::Command::none()
-            }
+                Message::Loaded(Err(_)) => {
+                    let audio_manager =
+                        AudioManager::<DefaultBackend>::new(AudioManagerSettings::default())
+                            .unwrap();
+                    *self = SoundboardApp::Loaded(AppState {
+                        audio_manager: Some(audio_manager),
+                        ..Default::default()
+                    });
+
+                    iced::Command::none()
+                }
+                _ => iced::Command::none(),
+            },
             SoundboardApp::Loaded(state) => {
                 let command = match message {
                     Message::Saved(_) => {
                         println!("Saved!");
                         state.dirty = false;
                         state.saving = false;
-                        iced::Command::none()
-                    }
-                    Message::SetDirty => {
-                        println!("Saving changes!");
-                        state.dirty = true;
                         iced::Command::none()
                     }
                     Message::SelectDirectory => {
@@ -397,16 +415,16 @@ impl Application for SoundboardApp {
                                 let folder = rfd::AsyncFileDialog::new().pick_folder().await;
                                 folder.map(|handle| handle.path().to_path_buf())
                             },
-                            Message::DirectorySelected,
+                            Message::DirectoryLoaded,
                         )
                     }
-                    Message::DirectorySelected(path) => {
+                    Message::DirectoryLoaded(path) => {
                         println!("Directory selected: {:?}", path);
                         if let Some(path) = path {
                             state.directory = Some(path.clone());
-                            state.files = get_files_from_dir(path);
+                            state.clips = load_audio_clips(path);
 
-                            iced::Command::perform(async { Message::SetDirty }, |message| message)
+                            iced::Command::none()
                         } else {
                             iced::Command::none()
                         }
@@ -429,6 +447,11 @@ impl Application for SoundboardApp {
                         }
                         iced::Command::none()
                     }
+                    Message::SetDirty => {
+                        state.dirty = true;
+                        iced::Command::none()
+                    }
+                    // Message::AudioClipsLoaded => {iced::Command::none()},
                     Message::AudioEvent(id, command) => match command {
                         AudioCommand::Play => {
                             let playback = state.active_playbacks.get_mut(&id).unwrap();
@@ -451,6 +474,36 @@ impl Application for SoundboardApp {
                             iced::Command::none()
                         }
                     },
+                    Message::StartPlayback(clip) => {
+                        let sound_data = StreamingSoundData::from_file(
+                            clip.clone().path,
+                            StreamingSoundSettings::default()
+                                .volume(Volume::Amplitude(state.global_volume))
+                                .playback_rate(state.global_speed),
+                        )
+                        .unwrap();
+
+                        let sound_handle = state
+                            .audio_manager
+                            .as_mut()
+                            .unwrap()
+                            .play(sound_data)
+                            .unwrap();
+
+                        // get duration from static sound (doesn't work with streaming)
+                        // let static_sound_data =
+                        //     StaticSoundData::from_file(path, StaticSoundSettings::default())
+                        //         .unwrap();
+                        // let duration = static_sound_data.duration().as_secs_f64();
+
+                        let playback = AudioPlayback { clip, sound_handle };
+
+                        // let id = self.audio_manager.as_ref().unwrap().num_sounds();
+                        state.active_playbacks.insert(state.next_id, playback);
+                        state.next_id += 1;
+
+                        iced::Command::none()
+                    }
                     Message::UpdatePlaybacks => {
                         state.active_playbacks.retain(|_id, playback| {
                             if playback.sound_handle.state() == PlaybackState::Stopped {
@@ -459,38 +512,6 @@ impl Application for SoundboardApp {
                                 true
                             }
                         });
-                        iced::Command::none()
-                    }
-                    Message::StartPlayback(path) => {
-                        let streaming_sound_data = StreamingSoundData::from_file(
-                            path.clone(),
-                            StreamingSoundSettings::default()
-                                .volume(Volume::Amplitude(state.global_volume))
-                                .playback_rate(state.global_speed),
-                        )
-                        .unwrap();
-                        let sound_handle = state
-                            .audio_manager
-                            .as_mut()
-                            .unwrap()
-                            .play(streaming_sound_data)
-                            .unwrap();
-
-                        // get duration from static sound (doesn't work with streaming)
-                        let static_sound_data =
-                            StaticSoundData::from_file(path, StaticSoundSettings::default())
-                                .unwrap();
-                        let duration = static_sound_data.duration().as_secs_f64();
-
-                        let playback = AudioPlayback {
-                            sound_handle,
-                            duration,
-                        };
-
-                        // let id = self.audio_manager.as_ref().unwrap().num_sounds();
-                        state.active_playbacks.insert(state.next_id, playback);
-                        state.next_id += 1;
-
                         iced::Command::none()
                     }
                     _ => iced::Command::none(),
@@ -600,14 +621,13 @@ impl SavedState {
                 .map_err(|_| SaveError::Write)?;
         }
 
-        // async_std::task::sleep(std::time::Duration::from_secs(2)).await;
-
         Ok(())
     }
 }
 
-fn get_files_from_dir(directory: std::path::PathBuf) -> Vec<std::path::PathBuf> {
-    let mut files: Vec<std::path::PathBuf> = std::fs::read_dir(directory)
+fn load_audio_clips(path: std::path::PathBuf) -> Vec<AudioClip> {
+    let mut clips = vec![];
+    let mut paths: Vec<std::path::PathBuf> = std::fs::read_dir(path)
         .unwrap()
         .filter_map(Result::ok)
         .filter(|entry| entry.file_type().unwrap().is_file())
@@ -621,6 +641,38 @@ fn get_files_from_dir(directory: std::path::PathBuf) -> Vec<std::path::PathBuf> 
         })
         .map(|entry| entry.path())
         .collect();
-    files.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
-    files
+    paths.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
+
+    for path in paths {
+        let name = path.file_name().unwrap().to_str().unwrap().to_owned();
+        let duration = get_audio_duration(&path);
+
+        clips.push(AudioClip {
+            name,
+            path,
+            duration,
+        });
+    }
+
+    clips
+}
+
+fn get_audio_duration(path: &std::path::PathBuf) -> Duration {
+    let tagged_file = Probe::open(path)
+        .expect("ERROR: Bad path provided!")
+        .read()
+        .expect("ERROR: Failed to read file!");
+
+    let properties = tagged_file.properties();
+    let duration = properties.duration();
+
+    duration
+}
+
+fn format_seconds_to_time(seconds: f64) -> String {
+    let total_seconds = seconds as u64;
+    let minutes = total_seconds / 60;
+    let seconds = total_seconds % 60;
+
+    format!("{:02}:{:02}", minutes, seconds)
 }
