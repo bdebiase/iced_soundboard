@@ -1,55 +1,89 @@
 {
+  description = "Build a cargo project while also compiling the standard library";
+
   inputs = {
-    naersk.url = "github:nix-community/naersk/master";
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
-    utils.url = "github:numtide/flake-utils";
+
+    crane = {
+      url = "github:ipetkov/crane";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
+    flake-utils.url = "github:numtide/flake-utils";
+
+    rust-overlay = {
+      url = "github:oxalica/rust-overlay";
+      inputs = {
+        nixpkgs.follows = "nixpkgs";
+        flake-utils.follows = "flake-utils";
+      };
+    };
+
+    fenix.url = "github:nix-community/fenix/monthly";
   };
 
-  outputs = {
-    self,
-    nixpkgs,
-    utils,
-    naersk,
-  }:
-    utils.lib.eachDefaultSystem (system: let
-      pkgs = import nixpkgs {inherit system;};
-      naersk-lib = pkgs.callPackage naersk {};
-    in {
-      defaultPackage = naersk-lib.buildPackage ./.;
-      devShell = with pkgs;
-        mkShell {
-          nativeBuildInputs = [
+  outputs = { self, nixpkgs, crane, flake-utils, rust-overlay, ... }:
+    flake-utils.lib.eachDefaultSystem (system:
+      let
+        pkgs = import nixpkgs {
+          inherit system;
+          overlays = [ (import rust-overlay) ];
+        };
+
+        rustToolchain = pkgs.rust-bin.selectLatestNightlyWith (toolchain: toolchain.default.override {
+          extensions = [ "rust-src" ];
+          targets = [ "x86_64-unknown-linux-gnu" ];
+        });
+
+        # rustToolchain = with fenix.packages.${system};
+        #   fromToolchainFile {
+        #     file = ./rust-toolchain.toml;
+        #     sha256 = "sha256-U2yfueFohJHjif7anmJB5vZbpP7G6bICH4ZsjtufRoU=";
+        #   };
+
+        craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
+
+        my-crate = craneLib.buildPackage {
+          src = craneLib.cleanCargoSource (craneLib.path ./.);
+          strictDeps = true;
+
+          # cargoVendorDir = craneLib.vendorMultipleCargoDeps {
+          #   inherit (craneLib.findCargoFiles src) cargoConfigs;
+          #   cargoLockList = [
+          #     ./Cargo.lock
+
+          #     "${rustToolchain.passthru.availableComponents.rust-src}/lib/rustlib/src/rust/Cargo.lock"
+          #   ];
+          # };
+
+          # cargoExtraArgs = "-Z build-std --target x86_64-unknown-linux-gnu";
+
+          nativeBuildInputs = with pkgs; [
             pkg-config
           ];
-          buildInputs = [
-            cargo
-            rustc
-            rustfmt
-            pre-commit
-            rustPackages.clippy
-            freetype
-            fontconfig
-            glib
-            cairo
-            pango
-            gdk-pixbuf
-            atk
-            gtk3
+
+          buildInputs = with pkgs; [
             alsa-lib
             jack2
+            glib
+            atk
+            pango
+            gtk3
           ];
-          RUST_SRC_PATH = rustPlatform.rustLibSrc;
-          FONTCONFIG_FILE = makeFontsConf {
-            fontDirectories = [freefont_ttf];
-          };
-
-          shellHook = ''
-            export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:${
-              with pkgs;
-              #lib.makeLibraryPath [libGL xorg.libX11 xorg.libXi xorg.libXcursor xorg.libXrandr]
-                lib.makeLibraryPath [libGL wayland libxkbcommon fontconfig freetype]
-            }"
-          '';
         };
-    });
+      in
+      {
+        packages.default = my-crate;
+
+        apps.default = flake-utils.lib.mkApp {
+          drv = my-crate;
+        };
+
+        devShells.default = craneLib.devShell {
+          packages = [
+            my-crate.nativeBuildInputs
+            my-crate.buildInputs
+          ];
+        };
+      });
 }
