@@ -30,6 +30,8 @@
           overlays = [ (import rust-overlay) ];
         };
 
+        src = craneLib.cleanCargoSource (craneLib.path ./.);
+
         rustToolchain = pkgs.rust-bin.selectLatestNightlyWith (toolchain: toolchain.default.override {
           extensions = [ "rust-src" ];
           targets = [ "x86_64-unknown-linux-gnu" ];
@@ -44,17 +46,17 @@
         craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
 
         my-crate = craneLib.buildPackage {
-          src = craneLib.cleanCargoSource (craneLib.path ./.);
+          inherit src;
           strictDeps = true;
 
-          # cargoVendorDir = craneLib.vendorMultipleCargoDeps {
-          #   inherit (craneLib.findCargoFiles src) cargoConfigs;
-          #   cargoLockList = [
-          #     ./Cargo.lock
+          cargoVendorDir = craneLib.vendorMultipleCargoDeps {
+            inherit (craneLib.findCargoFiles src) cargoConfigs;
+            cargoLockList = [
+              ./Cargo.lock
 
-          #     "${rustToolchain.passthru.availableComponents.rust-src}/lib/rustlib/src/rust/Cargo.lock"
-          #   ];
-          # };
+              "${rustToolchain.passthru.availableComponents.rust-src}/lib/rustlib/src/rust/Cargo.lock"
+            ];
+          };
 
           # cargoExtraArgs = "-Z build-std --target x86_64-unknown-linux-gnu";
 
