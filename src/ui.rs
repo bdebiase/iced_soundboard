@@ -139,7 +139,9 @@ impl SoundboardApp {
                         .on_press(Message::SelectTab(idx))
                         .style(
                             style::button::CustomButton::tab(state.get_current_tab_index() == idx)
-                                .with_border_radius(if idx == 0 {
+                                .with_border_radius(if len == 1 {
+                                    [BORDER_RADIUS, BORDER_RADIUS, 0.0, 0.0]
+                                } else if idx == 0 {
                                     [BORDER_RADIUS, 0.0, 0.0, 0.0]
                                 } else if idx == len - 1 {
                                     [0.0, BORDER_RADIUS, 0.0, 0.0]
