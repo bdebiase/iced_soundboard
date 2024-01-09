@@ -438,9 +438,10 @@ impl Application for SoundboardApp {
                         Command::none()
                     }
                     Message::VolumeChanged(value) => {
-                        if state.global_volume_enabled() {
-                            state.set_global_volume(value);
+                        if !state.global_volume_enabled() {
+                            state.toggle_global_volume()
                         }
+                        state.set_global_volume(value);
 
                         Command::none()
                     }
@@ -450,9 +451,10 @@ impl Application for SoundboardApp {
                         Command::none()
                     }
                     Message::SpeedChanged(value) => {
-                        if state.global_speed_enabled() {
-                            state.set_global_speed(value);
+                        if !state.global_speed_enabled() {
+                            state.toggle_global_speed()
                         }
+                        state.set_global_speed(value);
 
                         Command::none()
                     }
