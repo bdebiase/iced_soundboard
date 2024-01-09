@@ -20,4 +20,5 @@ I wanted to use a soundboard with some extra fun features like changing the spee
 - [ ] Theme support
 - [ ] Realtime audio effects
 - [ ] Per-audio settings (volume & speed)
+- [ ] YouTube-DL
 - [ ] Audio routing to other applications like Discord (done with VB-Cable on Windows or Jack/PipeWire on Linux)
