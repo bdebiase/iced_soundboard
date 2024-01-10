@@ -262,7 +262,8 @@ impl SoundboardApp {
                     let clips = tab
                         .clips
                         .iter()
-                        .fold(widget::Column::new(), |column, clip| {
+                        .enumerate()
+                        .fold(widget::Column::new(), |column, (idx, clip)| {
                             column.push(
                                 widget::button(
                                     widget::row!(
@@ -427,7 +428,7 @@ fn create_settings_slider<'a>(
 
     let slider = widget::slider(range, value, on_change_message)
         // .width(Length::Fixed(256.0))
-        .step(0.001)
+        .step(0.01)
         .on_release(Message::SetDirty)
         .style(style::slider::CustomSlider::default());
 
