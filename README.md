@@ -17,6 +17,7 @@ I wanted to use a soundboard with some extra fun features like changing the spee
 - [x] Tabs
 - [x] Saving
 - [ ] Async file loading
+- [ ] Favorites
 - [ ] Theme support
 - [ ] Realtime audio effects
 - [ ] Per-audio settings (volume & speed)
