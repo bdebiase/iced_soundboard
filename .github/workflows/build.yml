@@ -1,34 +1,57 @@
-            - name: Rust Release binary
-  # You may pin to the exact commit or the version.
-  # uses: rust-build/rust-build.action@6febf1b0ed6499a46610b58ef9d810398e75f3c2
-  uses: rust-build/rust-build.action@v1.4.5
-  with:
-    # Output target
-    RUSTTARGET: iced_soundboard
-    # List of extra files to include in build
-    EXTRA_FILES: # optional
-    # Path to directory containing Cargo.toml (defaults to project root)
-    SRC_DIR: # optional
-    # List of archive types to publish the binaries with, default "zip", supports zip and all tar formats
-    ARCHIVE_TYPES: # optional
-    # Full name of archive to upload (you must specify file extension and change this if building multiple targets)
-    ARCHIVE_NAME: # optional
-    # Relative path of script to run before building
-    PRE_BUILD: # optional
-    # Relative path of script to run after building
-    POST_BUILD: # optional
-    # If set to "true", the resulting binary will be stripped and compressed by UPX. ("false" by default)
-    MINIFY: # optional
-    # The rust toolchain version to use (see https://rust-lang.github.io/rustup/concepts/toolchains.html#toolchain-specification)
-    TOOLCHAIN_VERSION: # optional
-    # What method to use to upload compiled binaries, supported values: (release, none), default: release
-    UPLOAD_MODE: # optional
-    # Whether to statically link dependencies
-    STATIC_LINKING: # optional
-    # Extra flags to give to cargo build (space separated)
-    EXTRA_COMMAND_FLAGS: # optional
-    # Extra features to enable for the build
-    EXTRA_FEATURES: # optional
-    # Features to enable for the build (implies --no-default-features)
-    FEATURES: # optional
-          
+name: Build Windows Binary
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v2
+    
+    - name: Set up Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: beta
+        override: true
+    
+    - name: Install Chocolatey packages
+      run: |
+        choco install pkgconfiglite
+        choco install gtk-runtime
+        choco install mingw
+    
+    - name: Install additional dependencies
+      run: |
+        # ALSA equivalent (not typically needed on Windows, as it uses a different audio API)
+        # Jack2 equivalent (ASIO might be an alternative, but requires different handling)
+        
+        # GLib, ATK, Pango, GTK3 (installed via gtk-runtime above)
+        
+        # libxkbcommon equivalent
+        curl -L -o xkbcommon-x64.zip https://github.com/microsoft/windows-rs/raw/0.48.0/crates/libs/WindowsXaml_x64/xkbcommon.dll
+        7z x xkbcommon-x64.zip -o"C:\Windows\System32"
+        
+        # libGL equivalent (OpenGL is typically available on Windows)
+        
+        # Wayland is Linux-specific, no direct Windows equivalent
+        
+        # X11 libraries are Linux-specific, Windows uses its own windowing system
+
+    - name: Setup environment variables
+      run: |
+        echo "C:\msys64\mingw64\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+        echo "PKG_CONFIG_PATH=C:\msys64\mingw64\lib\pkgconfig" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+    - name: Build
+      run: cargo build --release
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v2
+      with:
+        name: windows-binary
+        path: target/release/*.exe
