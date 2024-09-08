@@ -1,9 +1,11 @@
+use iced::{border::Radius, Border};
+
 use super::BORDER_RADIUS;
 
 #[allow(unused)]
 struct CustomContainerState {
     custom_style: CustomContainerStyle,
-    border_radius: iced::BorderRadius,
+    border_radius: [f32; 4],
 }
 
 impl Default for CustomContainerState {
@@ -51,9 +53,10 @@ impl iced::widget::container::StyleSheet for CustomContainer {
 
                 iced::widget::container::Appearance {
                     background: Some(background.into()),
-                    border_radius: *border_radius,
-                    border_color: iced::Color::TRANSPARENT,
-                    border_width: 0.0,
+                    border: Border {
+                        radius: Radius::from(*border_radius),
+                        ..Default::default()
+                    },
                     ..Default::default()
                 }
             }

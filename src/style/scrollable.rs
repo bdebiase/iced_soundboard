@@ -1,4 +1,4 @@
-use iced::{widget::scrollable::Scroller, Color};
+use iced::Border;
 
 use super::BORDER_RADIUS;
 
@@ -20,22 +20,25 @@ impl std::convert::From<CustomScrollable> for iced::theme::Scrollable {
 impl iced::widget::scrollable::StyleSheet for CustomScrollable {
     type Style = iced::theme::Theme;
 
-    fn active(&self, style: &Self::Style) -> iced::widget::scrollable::Scrollbar {
-        iced::widget::scrollable::Scrollbar {
-            background: None,
-            border_color: Color::TRANSPARENT,
-            border_radius: 0.0.into(),
-            border_width: 0.0,
-            scroller: Scroller {
-                color: {
-                    let mut color = style.palette().primary;
-                    color.a = 0.05;
-                    color
+    fn active(&self, style: &Self::Style) -> iced::widget::scrollable::Appearance {
+        iced::widget::scrollable::Appearance {
+            scrollbar: iced::widget::scrollable::Scrollbar {
+                background: None,
+                border: iced::Border::default(),
+                scroller: iced::widget::scrollable::Scroller {
+                    color: {
+                        let mut color = style.palette().primary;
+                        color.a = 0.05;
+                        color
+                    },
+                    border: Border {
+                        radius: BORDER_RADIUS.into(),
+                        ..Default::default()
+                    },
                 },
-                border_radius: BORDER_RADIUS.into(),
-                border_width: 0.0,
-                border_color: Color::TRANSPARENT,
             },
+            container: iced::widget::container::Appearance::default(),
+            gap: None,
         }
     }
 
@@ -43,22 +46,25 @@ impl iced::widget::scrollable::StyleSheet for CustomScrollable {
         &self,
         style: &Self::Style,
         is_mouse_over_scrollbar: bool,
-    ) -> iced::widget::scrollable::Scrollbar {
-        iced::widget::scrollable::Scrollbar {
-            background: None,
-            border_color: Color::TRANSPARENT,
-            border_radius: 0.0.into(),
-            border_width: 0.0,
-            scroller: Scroller {
-                color: {
-                    let mut color = style.palette().primary;
-                    color.a = if is_mouse_over_scrollbar { 0.125 } else { 0.05 };
-                    color
+    ) -> iced::widget::scrollable::Appearance {
+        iced::widget::scrollable::Appearance {
+            scrollbar: iced::widget::scrollable::Scrollbar {
+                background: None,
+                border: iced::Border::default(),
+                scroller: iced::widget::scrollable::Scroller {
+                    color: {
+                        let mut color = style.palette().primary;
+                        color.a = if is_mouse_over_scrollbar { 0.125 } else { 0.05 };
+                        color
+                    },
+                    border: Border {
+                        radius: BORDER_RADIUS.into(),
+                        ..Default::default()
+                    },
                 },
-                border_radius: BORDER_RADIUS.into(),
-                border_width: 0.0,
-                border_color: Color::TRANSPARENT,
             },
+            container: iced::widget::container::Appearance::default(),
+            gap: None,
         }
     }
 }

@@ -1,9 +1,11 @@
+use iced::{border::Radius, Border};
+
 use super::BORDER_RADIUS;
 
 struct CustomButtonState {
     custom_style: CustomButtonStyle,
     color: Option<iced::Color>,
-    border_radius: iced::BorderRadius,
+    border_radius: [f32; 4],
 }
 
 impl Default for CustomButtonState {
@@ -11,7 +13,7 @@ impl Default for CustomButtonState {
         Self {
             custom_style: CustomButtonStyle::Default,
             color: None,
-            border_radius: [BORDER_RADIUS; 4].into(),
+            border_radius: [BORDER_RADIUS; 4],
         }
     }
 }
@@ -96,13 +98,20 @@ impl iced::widget::button::StyleSheet for CustomButton {
                     iced::widget::button::Appearance {
                         background: Some(background.into()),
                         text_color: style.palette().text,
-                        border_radius: *border_radius,
+                        border: Border {
+                            radius: Radius::from(*border_radius),
+                            ..Default::default()
+                        },
+                        //border_radius: *border_radius,
                         ..Default::default()
                     }
                 }
                 CustomButtonStyle::Flat => iced::widget::button::Appearance {
                     text_color: style.palette().text,
-                    border_radius: *border_radius,
+                    border: Border {
+                        radius: Radius::from(*border_radius),
+                        ..Default::default()
+                    },
                     ..Default::default()
                 },
                 CustomButtonStyle::Active => self.pressed(style),
@@ -124,7 +133,10 @@ impl iced::widget::button::StyleSheet for CustomButton {
                     iced::widget::button::Appearance {
                         background: Some(background.into()),
                         text_color,
-                        border_radius: *border_radius,
+                        border: Border {
+                            radius: Radius::from(*border_radius),
+                            ..Default::default()
+                        },
                         ..Default::default()
                     }
                 }
@@ -155,7 +167,10 @@ impl iced::widget::button::StyleSheet for CustomButton {
                         // ))),
                         background: Some(background.into()),
                         text_color: style.palette().text,
-                        border_radius: *border_radius,
+                        border: Border {
+                            radius: Radius::from(*border_radius),
+                            ..Default::default()
+                        },
                         ..Default::default()
                     }
                 }
@@ -170,7 +185,10 @@ impl iced::widget::button::StyleSheet for CustomButton {
                     iced::widget::button::Appearance {
                         background: Some(background.into()),
                         text_color: style.palette().text,
-                        border_radius: *border_radius,
+                        border: Border {
+                            radius: Radius::from(*border_radius),
+                            ..Default::default()
+                        },
                         ..Default::default()
                     }
                 }

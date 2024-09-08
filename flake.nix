@@ -1,91 +1,53 @@
 {
-  description = "Build a cargo project while also compiling the standard library";
-
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
-
-    crane = {
-      url = "github:ipetkov/crane";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-
     flake-utils.url = "github:numtide/flake-utils";
-
+    nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-unstable";
     rust-overlay = {
       url = "github:oxalica/rust-overlay";
-      inputs = {
-        nixpkgs.follows = "nixpkgs";
-        flake-utils.follows = "flake-utils";
-      };
+      inputs.nixpkgs.follows = "nixpkgs";
     };
-
-    fenix.url = "github:nix-community/fenix/monthly";
   };
 
-  outputs = { self, nixpkgs, crane, flake-utils, rust-overlay, ... }:
-    flake-utils.lib.eachDefaultSystem (system:
-      let
-        pkgs = import nixpkgs {
-          inherit system;
-          overlays = [ (import rust-overlay) ];
-        };
-
-        src = craneLib.cleanCargoSource (craneLib.path ./.);
-
-        rustToolchain = pkgs.rust-bin.selectLatestNightlyWith (toolchain: toolchain.default.override {
-          extensions = [ "rust-src" ];
-          targets = [ "x86_64-unknown-linux-gnu" ];
-        });
-
-        # rustToolchain = with fenix.packages.${system};
-        #   fromToolchainFile {
-        #     file = ./rust-toolchain.toml;
-        #     sha256 = "sha256-U2yfueFohJHjif7anmJB5vZbpP7G6bICH4ZsjtufRoU=";
-        #   };
-
-        craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
-
-        my-crate = craneLib.buildPackage {
-          inherit src;
-          strictDeps = true;
-
-          cargoVendorDir = craneLib.vendorMultipleCargoDeps {
-            inherit (craneLib.findCargoFiles src) cargoConfigs;
-            cargoLockList = [
-              ./Cargo.lock
-
-              "${rustToolchain.passthru.availableComponents.rust-src}/lib/rustlib/src/rust/Cargo.lock"
-            ];
-          };
-
-          # cargoExtraArgs = "-Z build-std --target x86_64-unknown-linux-gnu";
-
-          nativeBuildInputs = with pkgs; [
+  outputs = {
+    nixpkgs,
+    flake-utils,
+    rust-overlay,
+    ...
+  }:
+    flake-utils.lib.eachDefaultSystem (system: let
+      overlays = [(import rust-overlay)];
+      pkgs = import nixpkgs {inherit system overlays;};
+    in {
+      devShells.default = with pkgs;
+        mkShell rec {
+          nativeBuildInputs = [
             pkg-config
           ];
 
-          buildInputs = with pkgs; [
+          buildInputs = [
             alsa-lib
             jack2
             glib
             atk
             pango
             gtk3
-          ];
-        };
-      in
-      {
-        packages.default = my-crate;
 
-        apps.default = flake-utils.lib.mkApp {
-          drv = my-crate;
-        };
+            rust-bin.beta.latest.default
+            rust-analyzer
 
-        devShells.default = craneLib.devShell {
-          packages = [
-            my-crate.nativeBuildInputs
-            my-crate.buildInputs
+            libxkbcommon
+            libGL
+
+            # WINIT_UNIX_BACKEND=wayland
+            wayland
+
+            # WINIT_UNIX_BACKEND=x11
+            xorg.libXcursor
+            xorg.libXrandr
+            xorg.libXi
+            xorg.libX11
           ];
+          LD_LIBRARY_PATH = "${lib.makeLibraryPath buildInputs}";
         };
-      });
+    });
 }

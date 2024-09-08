@@ -6,18 +6,18 @@ mod ui;
 
 use crate::app::SoundboardApp;
 
-use iced::{window, Application, Font, Settings};
+use iced::{window, Application, Font, Settings, Size};
 use style::{FONT_NAME, FONT_SIZE_DEFAULT};
 
 fn main() -> iced::Result {
     SoundboardApp::run(Settings {
         window: window::Settings {
-            size: (500, 800),
-            min_size: Some((400, 200)),
+            size: Size::new(500.0, 800.0),
+            min_size: Some(Size::new(400.0, 200.0)),
             ..Default::default()
         },
         default_font: Font::with_name(FONT_NAME),
-        default_text_size: FONT_SIZE_DEFAULT as f32,
+        default_text_size: FONT_SIZE_DEFAULT.into(),
         ..Default::default()
     })
 }

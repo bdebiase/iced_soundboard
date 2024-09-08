@@ -7,10 +7,7 @@ use crate::{
 use iced::{executor, font, theme, time, Application, Command, Element, Subscription};
 use kira::{
     manager::{backend::DefaultBackend, AudioManager, AudioManagerSettings},
-    sound::{
-        streaming::{StreamingSoundData, StreamingSoundSettings},
-        PlaybackRate, PlaybackState,
-    },
+    sound::{streaming::StreamingSoundData, PlaybackRate, PlaybackState},
     tween::Tween,
     Volume,
 };
@@ -66,24 +63,20 @@ pub enum SoundboardApp {
 }
 
 pub struct AppState {
-    tabs: Vec<Tab>,
-    current_tab: usize,
+    pub tabs: Vec<Tab>,
+    pub current_tab: usize,
 
-    audio_manager: Option<AudioManager>,
-    active_playbacks: BTreeMap<usize, AudioPlayback>,
-    next_id: usize,
+    pub audio_manager: Option<AudioManager>,
+    pub active_playbacks: BTreeMap<usize, AudioPlayback>,
+    pub next_id: usize,
 
-    volume_enabled: bool,
-    global_volume: f64,
-    global_speed: f64,
-    speed_enabled: bool,
+    pub volume_enabled: bool,
+    pub global_volume: f64,
+    pub global_speed: f64,
+    pub speed_enabled: bool,
 
-    show_download_popup: bool,
-    download_url: String,
-    download_progress: f32,
-
-    saving: bool,
-    dirty: bool,
+    pub saving: bool,
+    pub dirty: bool,
 }
 
 impl Default for AppState {
@@ -98,9 +91,6 @@ impl Default for AppState {
             global_volume: 1.0,
             global_speed: 1.0,
             speed_enabled: true,
-            show_download_popup: false,
-            download_url: Default::default(),
-            download_progress: 0.0,
             saving: false,
             dirty: false,
         }
@@ -108,21 +98,22 @@ impl Default for AppState {
 }
 
 impl AppState {
-    fn toggle_global_volume(&mut self) {
+    pub fn save(&mut self) {
+        self.dirty = false;
+        self.saving = false;
+    }
+
+    pub fn toggle_global_volume(&mut self) {
         self.volume_enabled = !self.volume_enabled;
         self.update_playbacks_volume();
     }
 
-    fn toggle_global_speed(&mut self) {
+    pub fn toggle_global_speed(&mut self) {
         self.speed_enabled = !self.speed_enabled;
         self.update_playbacks_speed();
     }
 
-    fn toggle_download_popup(&mut self) {
-        self.show_download_popup = !self.show_download_popup;
-    }
-
-    fn set_global_volume(&mut self, value: f64) {
+    pub fn set_global_volume(&mut self, value: f64) {
         self.global_volume = value;
         self.update_playbacks_volume();
     }
@@ -135,16 +126,12 @@ impl AppState {
         }
     }
 
-    fn set_global_speed(&mut self, value: f64) {
+    pub fn set_global_speed(&mut self, value: f64) {
         self.global_speed = value;
         self.update_playbacks_speed();
     }
 
-    fn set_download_url(&mut self, value: String) {
-        self.download_url = value;
-    }
-
-    fn start_download(&mut self) -> Result<(), ()> {
+    pub fn start_download(&mut self) -> Result<(), ()> {
         if let Some(tab) = self.get_current_tab() {
             println!("Starting download...");
 
@@ -160,17 +147,13 @@ impl AppState {
         Ok(())
     }
 
-    fn refresh_clips(&mut self) {
+    pub fn refresh_clips(&mut self) {
         if let Some(tab) = self.tabs.get_mut(self.current_tab) {
             tab.clips = load_audio_clips(tab.directory.clone());
             println!("Clips refreshed.");
         } else {
             println!("No clips to refresh.");
         }
-    }
-
-    fn set_dirty(&mut self) {
-        self.dirty = true;
     }
 
     fn update_playbacks_volume(&mut self) {
@@ -191,7 +174,7 @@ impl AppState {
         }
     }
 
-    fn update_playbacks(&mut self) {
+    pub fn update_playbacks(&mut self) {
         self.active_playbacks.retain(|_id, playback| {
             if playback.handle.state() == PlaybackState::Stopped {
                 false
@@ -201,27 +184,33 @@ impl AppState {
         });
     }
 
-    fn stop_all_playbacks(&mut self) {
+    pub fn stop_all_playbacks(&mut self) {
         for (_, playback) in self.active_playbacks.iter_mut() {
             let _ = playback.handle.stop(Tween::default());
         }
     }
 
-    fn start_playback(&mut self, clip: AudioClip) {
+    pub fn start_playback(&mut self, clip: AudioClip) {
         let sound_data = StreamingSoundData::from_file(
             clip.clone().path,
-            StreamingSoundSettings::default()
-                .volume(Volume::Amplitude(self.get_global_volume()))
-                .playback_rate(self.get_global_speed()),
+            //StreamingSoundSettings::default()
+            //    .volume(Volume::Amplitude(self.get_global_volume()))
+            //    .playback_rate(self.get_global_speed()),
         )
         .unwrap();
 
-        let sound_handle = self
+        let mut sound_handle = self
             .audio_manager
             .as_mut()
             .unwrap()
             .play(sound_data)
             .unwrap();
+
+        sound_handle.set_playback_rate(self.get_global_speed(), Tween::default());
+        sound_handle.set_volume(
+            Volume::Amplitude(self.get_global_volume()),
+            Tween::default(),
+        );
 
         let playback = AudioPlayback {
             clip,
@@ -232,12 +221,12 @@ impl AppState {
         self.next_id += 1;
     }
 
-    fn add_tab(&mut self, tab: Tab) {
+    pub fn add_tab(&mut self, tab: Tab) {
         self.tabs.push(tab);
         self.current_tab = self.tabs.len() - 1;
     }
 
-    fn close_tab(&mut self, index: usize) {
+    pub fn close_tab(&mut self, index: usize) {
         self.tabs.remove(index);
         self.current_tab = if self.tabs.is_empty() {
             0
@@ -246,20 +235,12 @@ impl AppState {
         };
     }
 
-    fn select_tab(&mut self, index: usize) {
+    pub fn select_tab(&mut self, index: usize) {
         self.current_tab = index;
-    }
-
-    pub fn get_tabs(&self) -> &Vec<Tab> {
-        &self.tabs
     }
 
     pub fn get_current_tab(&self) -> Option<&Tab> {
         self.tabs.get(self.current_tab)
-    }
-
-    pub fn get_active_playbacks(&self) -> &BTreeMap<usize, AudioPlayback> {
-        &self.active_playbacks
     }
 
     pub fn get_global_speed(&self) -> f64 {
@@ -270,28 +251,8 @@ impl AppState {
         }
     }
 
-    pub fn get_download_url(&self) -> &str {
-        &self.download_url
-    }
-
-    pub fn get_download_progress(&self) -> f32 {
-        self.download_progress
-    }
-
-    pub fn global_volume_enabled(&self) -> bool {
-        self.volume_enabled
-    }
-
-    pub fn global_speed_enabled(&self) -> bool {
-        self.speed_enabled
-    }
-
-    pub fn get_show_download_popup(&self) -> bool {
-        self.show_download_popup
-    }
-
-    pub fn get_current_tab_index(&self) -> usize {
-        self.current_tab
+    pub fn set_dirty(&self) -> bool {
+        self.dirty
     }
 }
 
@@ -302,14 +263,10 @@ impl Application for SoundboardApp {
     type Theme = theme::Theme;
 
     fn new(_flags: ()) -> (Self, Command<Message>) {
-        let mut commands: Vec<Command<Message>> = vec![
-            FONT_BYTES_REGULAR,
-            FONT_BYTES_BOLD,
-            iced_aw::graphics::icons::ICON_FONT_BYTES,
-        ]
-        .iter()
-        .map(|&bytes| font::load(std::borrow::Cow::from(bytes)).map(Message::FontLoaded))
-        .collect();
+        let mut commands: Vec<Command<Message>> = vec![FONT_BYTES_REGULAR, FONT_BYTES_BOLD]
+            .iter()
+            .map(|&bytes| font::load(std::borrow::Cow::from(bytes)).map(Message::FontLoaded))
+            .collect();
 
         commands.push(Command::perform(SavedState::load(), Message::Loaded));
 
@@ -332,6 +289,8 @@ impl Application for SoundboardApp {
     }
 
     fn update(&mut self, message: Message) -> Command<Message> {
+        // TODO: move
+        // handle loading
         match self {
             SoundboardApp::Loading => match message {
                 // if loaded with saved state, set state
@@ -369,174 +328,10 @@ impl Application for SoundboardApp {
                 }
                 _ => Command::none(),
             },
-            SoundboardApp::Loaded(state) => {
-                let command = match message {
-                    Message::Saved(_) => {
-                        println!("Saved!");
-                        state.dirty = false;
-                        state.saving = false;
-
-                        Command::none()
-                    }
-                    Message::SelectTab(index) => {
-                        println!("Tab selected: {}", index);
-
-                        state.select_tab(index);
-                        state.set_dirty();
-
-                        if state.get_current_tab().unwrap().clips.is_empty() {
-                            println!("Tab is empty, refreshing clips...");
-                            state.refresh_clips(); // TODO: move to async
-                        }
-
-                        Command::none()
-                    }
-                    Message::CloseTab(index) => {
-                        println!("Tab closed: {}", index);
-
-                        state.close_tab(index);
-                        state.set_dirty();
-
-                        Command::none()
-                    }
-                    Message::NewTab => {
-                        println!("New tab");
-                        println!("Presenting directory file picker...");
-
-                        Command::perform(get_dir_async(), Message::CreateTab)
-                    }
-                    Message::CreateTab(path) => {
-                        if let Some(path) = path {
-                            println!("Creating new tab with path: {:?}", path);
-
-                            state.add_tab(Tab {
-                                name: path.file_name().unwrap().to_str().unwrap().to_owned(),
-                                directory: path,
-                                clips: vec![],
-                            });
-                            state.set_dirty();
-                            state.refresh_clips(); // TODO: move to async
-                        } else {
-                            println!("No path provided, tab not created");
-                        }
-
-                        Command::none()
-                    }
-                    Message::RefreshClips => {
-                        state.refresh_clips();
-
-                        Command::none()
-                    }
-                    Message::SetDirty => {
-                        state.set_dirty();
-
-                        Command::none()
-                    }
-                    Message::VolumeToggled => {
-                        state.toggle_global_volume();
-
-                        Command::none()
-                    }
-                    Message::VolumeChanged(value) => {
-                        if !state.global_volume_enabled() {
-                            state.toggle_global_volume()
-                        }
-                        state.set_global_volume(value);
-
-                        Command::none()
-                    }
-                    Message::SpeedToggled => {
-                        state.toggle_global_speed();
-
-                        Command::none()
-                    }
-                    Message::SpeedChanged(value) => {
-                        if !state.global_speed_enabled() {
-                            state.toggle_global_speed()
-                        }
-                        state.set_global_speed(value);
-
-                        Command::none()
-                    }
-                    Message::AudioEvent(id, command) => {
-                        if let Some(playback) = state.active_playbacks.get_mut(&id) {
-                            match command {
-                                AudioCommand::Play => {
-                                    let _ = playback.handle.resume(Tween::default());
-                                }
-                                AudioCommand::Pause => {
-                                    let _ = playback.handle.pause(Tween::default());
-                                }
-                                AudioCommand::Stop => {
-                                    let _ = playback.handle.stop(Tween::default());
-                                }
-                                AudioCommand::Seek(position) => {
-                                    let _ = playback.handle.seek_to(position);
-                                }
-                            }
-                        }
-
-                        Command::none()
-                    }
-                    Message::StartPlayback(clip) => {
-                        state.start_playback(clip);
-
-                        Command::none()
-                    }
-                    Message::StopAllPlaybacks => {
-                        state.stop_all_playbacks();
-
-                        Command::none()
-                    }
-                    Message::UpdatePlaybacks => {
-                        state.update_playbacks();
-
-                        Command::none()
-                    }
-                    Message::ToggleDownloadPopup => {
-                        state.toggle_download_popup();
-
-                        Command::none()
-                    }
-                    Message::DownloadUrlChanged(value) => {
-                        let _ = state.set_download_url(value);
-
-                        Command::none()
-                    }
-                    Message::StartDownload => {
-                        let _ = state.start_download();
-
-                        Command::none()
-                        // Command::perform(state.start_download(), Message::DownloadFinished)
-                    }
-                    Message::UpdateDownloadProgress(_) => Command::none(),
-                    Message::DownloadFinished(_) => {
-                        println!("Download finished!");
-
-                        Command::none()
-                    }
-                    _ => Command::none(),
-                };
-
-                let save = if state.dirty && !state.saving {
-                    state.saving = true;
-
-                    Command::perform(
-                        SavedState {
-                            tabs: state.tabs.clone(),
-                            current_tab: state.current_tab,
-                            global_speed: state.global_speed,
-                            global_volume: state.global_volume,
-                        }
-                        .save(),
-                        Message::Saved,
-                    )
-                } else {
-                    Command::none()
-                };
-
-                Command::batch(vec![command, save])
-            }
+            SoundboardApp::Loaded(state) => Command::batch(vec![
+                crate::ui::update(state, &message),
+                crate::audio::update(state, &message),
+            ]),
         }
     }
 
@@ -581,9 +376,9 @@ fn load_audio_clips(path: std::path::PathBuf) -> Vec<AudioClip> {
 }
 
 fn get_audio_duration(path: &std::path::PathBuf) -> std::time::Duration {
-    use lofty::AudioFile;
+    use lofty::prelude::AudioFile;
 
-    let tagged_file = lofty::Probe::open(path)
+    let tagged_file = lofty::probe::Probe::open(path)
         .expect("ERROR: Bad path provided!")
         .read()
         .expect("ERROR: Failed to read file!");
@@ -592,15 +387,4 @@ fn get_audio_duration(path: &std::path::PathBuf) -> std::time::Duration {
     let duration = properties.duration();
 
     duration
-}
-
-async fn get_dir_async() -> Option<std::path::PathBuf> {
-    let folder = rfd::AsyncFileDialog::new().pick_folder().await;
-    let path = folder.map(|handle| handle.path().to_path_buf());
-
-    if let Some(path) = path {
-        Some(path)
-    } else {
-        None
-    }
 }

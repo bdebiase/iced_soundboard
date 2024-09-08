@@ -1,6 +1,7 @@
 use crate::{
-    app::{Message, SoundboardApp},
+    app::{AppState, Message, SoundboardApp, Tab},
     audio::AudioCommand,
+    saving::SavedState,
     style::{self, icons, BORDER_RADIUS, FONT_NAME, FONT_SIZE_TABS, SPACING_NORMAL, SPACING_SMALL},
 };
 
@@ -10,7 +11,7 @@ use iced::{
         self,
         scrollable::{Direction, Properties},
     },
-    Alignment, Element, Font, Length,
+    Alignment, Command, Element, Font, Length,
 };
 use kira::sound::PlaybackState;
 
@@ -21,10 +22,8 @@ const TOOL_BUTTON_SIZE_SMALL: Length = Length::Fixed(24.0);
 impl SoundboardApp {
     pub fn font(&self) -> Font {
         Font {
-            weight: font::Weight::Normal,
             family: font::Family::Name(FONT_NAME),
-            monospaced: true,
-            stretch: font::Stretch::Normal,
+            ..Default::default()
         }
     }
 
@@ -59,7 +58,7 @@ impl SoundboardApp {
 
                 let mut column_widgets = vec![];
                 column_widgets.push(content_column.into());
-                if !state.get_active_playbacks().is_empty() {
+                if !state.active_playbacks.is_empty() {
                     column_widgets.push(playbacks.into());
                 }
                 column_widgets.push(controls.into());
@@ -72,54 +71,56 @@ impl SoundboardApp {
                     .padding(SPACING_NORMAL)
                     .into();
 
-                let overlay = if state.get_show_download_popup() {
-                    Some(self.view_download_popup())
-                } else {
-                    None
-                };
+                // let overlay = if state.get_show_download_popup() {
+                //     Some(self.view_download_popup())
+                // } else {
+                //     None
+                // };
 
-                iced_aw::modal(underlay, overlay)
-                    .backdrop(Message::ToggleDownloadPopup)
-                    .on_esc(Message::ToggleDownloadPopup)
-                    .into()
+                // iced_aw::modal(underlay, overlay)
+                //     .backdrop(Message::ToggleDownloadPopup)
+                //     .on_esc(Message::ToggleDownloadPopup)
+                //     .into()
+
+                underlay.into()
             }
             Self::Loading => unreachable!(),
         }
     }
 
-    fn view_download_popup(&self) -> Element<Message> {
-        match self {
-            Self::Loaded(state) => {
-                let text_input =
-                    widget::text_input("Enter a Youtube URL", &state.get_download_url())
-                        .on_input(Message::DownloadUrlChanged);
+    // fn view_download_popup(&self) -> Element<Message> {
+    //     match self {
+    //         Self::Loaded(state) => {
+    //             let text_input =
+    //                 widget::text_input("Enter a Youtube URL", &state.get_download_url())
+    //                     .on_input(Message::DownloadUrlChanged);
 
-                let download_button = widget::button("Download")
-                    .on_press(Message::StartDownload)
-                    .style(style::button::CustomButton::default().into());
+    //             let download_button = widget::button("Download")
+    //                 .on_press(Message::StartDownload)
+    //                 .style(style::button::CustomButton::default().into());
 
-                let progress_bar = widget::progress_bar(0.0..=100.0, state.get_download_progress());
+    //             let progress_bar = widget::progress_bar(0.0..=100.0, state.get_download_progress());
 
-                iced_aw::Card::new(
-                    widget::text("Modal").horizontal_alignment(alignment::Horizontal::Center),
-                    widget::container(
-                        widget::column!(text_input, download_button, progress_bar)
-                            .spacing(SPACING_NORMAL),
-                    ),
-                )
-                .width(Length::Fixed(512.0))
-                .into()
-            }
-            Self::Loading => unreachable!(),
-        }
-    }
+    //             iced_aw::Card::new(
+    //                 widget::text("Modal").horizontal_alignment(alignment::Horizontal::Center),
+    //                 widget::container(
+    //                     widget::column!(text_input, download_button, progress_bar)
+    //                         .spacing(SPACING_NORMAL),
+    //                 ),
+    //             )
+    //             .width(Length::Fixed(512.0))
+    //             .into()
+    //         }
+    //         Self::Loading => unreachable!(),
+    //     }
+    // }
 
     fn view_tab_bar(&self) -> Element<Message> {
         match self {
             Self::Loaded(state) => {
-                let len = state.get_tabs().len();
+                let len = state.tabs.len();
                 let tabs = state
-                    .get_tabs()
+                    .tabs
                     .iter()
                     .enumerate()
                     .fold(widget::Row::new(), |row, (idx, tab)| {
@@ -128,7 +129,7 @@ impl SoundboardApp {
                             .width(TOOL_BUTTON_SIZE_SMALL)
                             .height(TOOL_BUTTON_SIZE_SMALL)
                             .on_press(Message::CloseTab(idx))
-                            .style(style::button::CustomButton::flat().into());
+                            .style(style::button::CustomButton::flat());
 
                         let button = widget::button(
                             widget::row!(text, close_button)
@@ -138,17 +139,21 @@ impl SoundboardApp {
                         .padding([SPACING_SMALL, SPACING_NORMAL])
                         .on_press(Message::SelectTab(idx))
                         .style(
-                            style::button::CustomButton::tab(state.get_current_tab_index() == idx)
-                                .with_border_radius(if len == 1 {
-                                    [BORDER_RADIUS, BORDER_RADIUS, 0.0, 0.0]
-                                } else if idx == 0 {
-                                    [BORDER_RADIUS, 0.0, 0.0, 0.0]
-                                } else if idx == len - 1 {
-                                    [0.0, BORDER_RADIUS, 0.0, 0.0]
-                                } else {
-                                    [0.0; 4]
-                                })
-                                .into(),
+                            style::button::CustomButton::tab(state.current_tab == idx)
+                                .with_border_radius([
+                                    if idx == 0 { BORDER_RADIUS } else { 0.0 },
+                                    if idx == len - 1 { BORDER_RADIUS } else { 0.0 },
+                                    0.0,
+                                    0.0,
+                                ]), // .with_border_radius(if len == 1 {
+                                    //     [BORDER_RADIUS, BORDER_RADIUS, 0.0, 0.0]
+                                    // } else if idx == 0 {
+                                    //     [BORDER_RADIUS, 0.0, 0.0, 0.0]
+                                    // } else if idx == len - 1 {
+                                    //     [0.0, BORDER_RADIUS, 0.0, 0.0]
+                                    // } else {
+                                    //     [0.0; 4]
+                                    // })
                         );
                         row.push(button)
                     })
@@ -163,7 +168,7 @@ impl SoundboardApp {
                         .on_press(Message::NewTab)
                         .width(TOOL_BUTTON_SIZE)
                         .height(TOOL_BUTTON_SIZE)
-                        .style(style::button::CustomButton::default().into());
+                        .style(style::button::CustomButton::default());
 
                     widget::row!(scrollable, add_button)
                         .width(Length::Fill)
@@ -182,7 +187,7 @@ impl SoundboardApp {
                         .width(TOOL_BUTTON_SIZE)
                         .height(TOOL_BUTTON_SIZE)
                         .on_press(Message::RefreshClips)
-                        .style(style::button::CustomButton::default().into());
+                        .style(style::button::CustomButton::default());
 
                     widget::row!(refresh_button)
                         .spacing(SPACING_SMALL)
@@ -205,9 +210,9 @@ impl SoundboardApp {
             Self::Loaded(state) => {
                 let sliders_column = {
                     let volume_slider = create_settings_slider(
-                        icons::volume_up(),
+                        icons::volume_high(),
                         "Volume",
-                        state.global_volume_enabled(),
+                        state.volume_enabled,
                         Message::VolumeToggled,
                         0.0..=1.0,
                         state.get_global_volume(),
@@ -217,7 +222,7 @@ impl SoundboardApp {
                     let speed_slider = create_settings_slider(
                         icons::speed(),
                         "Speed",
-                        state.global_speed_enabled(),
+                        state.speed_enabled,
                         Message::SpeedToggled,
                         0.0..=2.0,
                         state.get_global_speed(),
@@ -235,7 +240,7 @@ impl SoundboardApp {
                         .vertical_alignment(alignment::Vertical::Center)
                         .height(Length::Fill),
                 )
-                .style(style::button::CustomButton::default().into())
+                .style(style::button::CustomButton::default())
                 .width(Length::Fixed(128.0))
                 .height(Length::Fill)
                 .on_press(Message::StopAllPlaybacks);
@@ -268,18 +273,19 @@ impl SoundboardApp {
                                 widget::button(
                                     widget::row!(
                                         widget::text(clip.name.as_str()),
-                                        widget::horizontal_space(Length::Fill),
+                                        widget::horizontal_space(),
                                         widget::text(format_seconds_to_time(
                                             clip.duration.as_secs_f64()
                                         )),
                                     )
+                                    .height(Length::Fill)
                                     .align_items(Alignment::Center),
                                 )
                                 .width(Length::Fill)
                                 .height(Length::Fixed(48.0))
                                 .padding([0, SPACING_NORMAL])
                                 .on_press(Message::StartPlayback(clip.clone()))
-                                .style(style::button::CustomButton::flat().into()),
+                                .style(style::button::CustomButton::flat()),
                             )
                         })
                         .padding([0, SPACING_NORMAL]);
@@ -320,7 +326,7 @@ impl SoundboardApp {
         match self {
             Self::Loaded(state) => {
                 let playbacks = state
-                    .get_active_playbacks()
+                    .active_playbacks
                     .iter()
                     .rev()
                     .fold(widget::Column::new(), |column, (id, playback)| {
@@ -332,13 +338,13 @@ impl SoundboardApp {
                             .width(TOOL_BUTTON_SIZE)
                             .height(TOOL_BUTTON_SIZE)
                             .on_press(Message::AudioEvent(*id, AudioCommand::Play))
-                            .style(style::button::CustomButton::active().into());
+                            .style(style::button::CustomButton::active());
 
                         let pause_button = widget::button(icons::pause())
                             .width(TOOL_BUTTON_SIZE)
                             .height(TOOL_BUTTON_SIZE)
                             .on_press(Message::AudioEvent(*id, AudioCommand::Pause))
-                            .style(style::button::CustomButton::flat().into());
+                            .style(style::button::CustomButton::flat());
 
                         let control_button = if playback.handle.state() == PlaybackState::Playing {
                             pause_button
@@ -365,7 +371,7 @@ impl SoundboardApp {
                             .width(TOOL_BUTTON_SIZE)
                             .height(TOOL_BUTTON_SIZE)
                             .on_press(Message::AudioEvent(*id, AudioCommand::Stop))
-                            .style(style::button::CustomButton::flat().into());
+                            .style(style::button::CustomButton::flat());
 
                         column.push(
                             widget::row!(
@@ -412,7 +418,7 @@ fn create_settings_slider<'a>(
             .width(TOOL_BUTTON_SIZE)
             .height(TOOL_BUTTON_SIZE)
             .style(if enabled {
-                style::button::CustomButton::flat().into()
+                style::button::CustomButton::flat()
             } else {
                 style::button::CustomButton::active().into()
             })
@@ -459,4 +465,100 @@ fn truncate_text(text: &str, max_length: usize) -> String {
 
 fn scrollable_properties() -> Properties {
     Properties::default().scroller_width(4.0).width(4)
+}
+
+async fn get_dir_async() -> Option<std::path::PathBuf> {
+    let folder = rfd::AsyncFileDialog::new().pick_folder().await;
+    let path = folder.map(|handle| handle.path().to_path_buf());
+
+    if let Some(path) = path {
+        Some(path)
+    } else {
+        None
+    }
+}
+
+pub fn update(state: &mut AppState, message: &Message) -> Command<Message> {
+    let command = match message {
+        Message::Saved(_) => {
+            println!("Saved!");
+            state.save();
+
+            Command::none()
+        }
+        Message::SelectTab(index) => {
+            println!("Tab selected: {}", index);
+
+            state.select_tab(*index);
+            state.set_dirty();
+
+            if state.get_current_tab().unwrap().clips.is_empty() {
+                println!("Tab is empty, refreshing clips...");
+                state.refresh_clips(); // TODO: move to async
+            }
+
+            Command::none()
+        }
+        Message::CloseTab(index) => {
+            println!("Tab closed: {}", index);
+
+            state.close_tab(*index);
+            state.set_dirty();
+
+            Command::none()
+        }
+        Message::NewTab => {
+            println!("New tab");
+            println!("Presenting directory file picker...");
+
+            Command::perform(get_dir_async(), Message::CreateTab)
+        }
+        Message::CreateTab(path) => {
+            if let Some(path) = path {
+                println!("Creating new tab with path: {:?}", path);
+
+                state.add_tab(Tab {
+                    name: path.file_name().unwrap().to_str().unwrap().to_owned(),
+                    directory: path.to_path_buf(),
+                    clips: vec![],
+                });
+                state.set_dirty();
+                state.refresh_clips(); // TODO: move to async
+            } else {
+                println!("No path provided, tab not created");
+            }
+
+            Command::none()
+        }
+        Message::RefreshClips => {
+            state.refresh_clips();
+
+            Command::none()
+        }
+        Message::SetDirty => {
+            state.set_dirty();
+
+            Command::none()
+        }
+        _ => Command::none(),
+    };
+
+    let save = if state.dirty && !state.saving {
+        state.saving = true;
+
+        Command::perform(
+            SavedState {
+                tabs: state.tabs.to_vec(),
+                current_tab: state.current_tab,
+                global_volume: state.get_global_volume(),
+                global_speed: state.get_global_speed(),
+            }
+            .save(),
+            Message::Saved,
+        )
+    } else {
+        Command::none()
+    };
+
+    Command::batch(vec![command, save])
 }
