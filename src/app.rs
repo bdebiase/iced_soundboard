@@ -6,10 +6,8 @@ use crate::{
 
 use iced::{executor, font, theme, time, Application, Command, Element, Subscription};
 use kira::{
-    manager::{backend::DefaultBackend, AudioManager, AudioManagerSettings},
-    sound::{streaming::StreamingSoundData, PlaybackRate, PlaybackState},
-    tween::Tween,
-    Volume,
+    sound::{streaming::StreamingSoundData, PlaybackState},
+    AudioManager, AudioManagerSettings, DefaultBackend, PlaybackRate, Tween,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -41,7 +39,7 @@ pub enum Message {
 
     SetDirty,
     VolumeToggled,
-    VolumeChanged(f64),
+    VolumeChanged(f32),
     SpeedToggled,
     SpeedChanged(f64),
 
@@ -71,7 +69,7 @@ pub struct AppState {
     pub next_id: usize,
 
     pub volume_enabled: bool,
-    pub global_volume: f64,
+    pub global_volume: f32,
     pub global_speed: f64,
     pub speed_enabled: bool,
 
@@ -113,12 +111,12 @@ impl AppState {
         self.update_playbacks_speed();
     }
 
-    pub fn set_global_volume(&mut self, value: f64) {
+    pub fn set_global_volume(&mut self, value: f32) {
         self.global_volume = value;
         self.update_playbacks_volume();
     }
 
-    pub fn get_global_volume(&self) -> f64 {
+    pub fn get_global_volume(&self) -> f32 {
         if self.volume_enabled {
             self.global_volume
         } else {
@@ -157,11 +155,9 @@ impl AppState {
     }
 
     fn update_playbacks_volume(&mut self) {
-        let volume = self.get_global_volume();
+        let volume = self.get_global_volume().log10() * 20.0;
         for (_, playback) in self.active_playbacks.iter_mut() {
-            let _ = playback
-                .handle
-                .set_volume(Volume::Amplitude(volume), Tween::default());
+            let _ = playback.handle.set_volume(volume, Tween::default());
         }
     }
 
@@ -170,7 +166,7 @@ impl AppState {
         for (_, playback) in self.active_playbacks.iter_mut() {
             let _ = playback
                 .handle
-                .set_playback_rate(PlaybackRate::Factor(speed), Tween::default());
+                .set_playback_rate(PlaybackRate(speed), Tween::default());
         }
     }
 
@@ -191,13 +187,7 @@ impl AppState {
     }
 
     pub fn start_playback(&mut self, clip: AudioClip) {
-        let sound_data = StreamingSoundData::from_file(
-            clip.clone().path,
-            //StreamingSoundSettings::default()
-            //    .volume(Volume::Amplitude(self.get_global_volume()))
-            //    .playback_rate(self.get_global_speed()),
-        )
-        .unwrap();
+        let sound_data = StreamingSoundData::from_file(clip.clone().path).unwrap();
 
         let mut sound_handle = self
             .audio_manager
@@ -207,10 +197,9 @@ impl AppState {
             .unwrap();
 
         sound_handle.set_playback_rate(self.get_global_speed(), Tween::default());
-        sound_handle.set_volume(
-            Volume::Amplitude(self.get_global_volume()),
-            Tween::default(),
-        );
+
+        let volume = self.get_global_volume().log10() * 20.0;
+        sound_handle.set_volume(volume, Tween::default());
 
         let playback = AudioPlayback {
             clip,
@@ -303,8 +292,8 @@ impl Application for SoundboardApp {
                         tabs: state.tabs.clone(),
                         current_tab: state.current_tab,
                         audio_manager: Some(audio_manager),
-                        global_speed: state.global_speed,
                         global_volume: state.global_volume,
+                        global_speed: state.global_speed,
                         ..Default::default()
                     };
                     app_state.refresh_clips(); // TODO: move to async

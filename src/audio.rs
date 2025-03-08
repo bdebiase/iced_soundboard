@@ -1,7 +1,7 @@
 use iced::Command;
 use kira::{
     sound::{streaming::StreamingSoundHandle, FromFileError},
-    tween::Tween,
+    Tween,
 };
 use std::time::Duration;
 

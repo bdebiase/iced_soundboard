@@ -71,49 +71,11 @@ impl SoundboardApp {
                     .padding(SPACING_NORMAL)
                     .into();
 
-                // let overlay = if state.get_show_download_popup() {
-                //     Some(self.view_download_popup())
-                // } else {
-                //     None
-                // };
-
-                // iced_aw::modal(underlay, overlay)
-                //     .backdrop(Message::ToggleDownloadPopup)
-                //     .on_esc(Message::ToggleDownloadPopup)
-                //     .into()
-
                 underlay.into()
             }
             Self::Loading => unreachable!(),
         }
     }
-
-    // fn view_download_popup(&self) -> Element<Message> {
-    //     match self {
-    //         Self::Loaded(state) => {
-    //             let text_input =
-    //                 widget::text_input("Enter a Youtube URL", &state.get_download_url())
-    //                     .on_input(Message::DownloadUrlChanged);
-
-    //             let download_button = widget::button("Download")
-    //                 .on_press(Message::StartDownload)
-    //                 .style(style::button::CustomButton::default().into());
-
-    //             let progress_bar = widget::progress_bar(0.0..=100.0, state.get_download_progress());
-
-    //             iced_aw::Card::new(
-    //                 widget::text("Modal").horizontal_alignment(alignment::Horizontal::Center),
-    //                 widget::container(
-    //                     widget::column!(text_input, download_button, progress_bar)
-    //                         .spacing(SPACING_NORMAL),
-    //                 ),
-    //             )
-    //             .width(Length::Fixed(512.0))
-    //             .into()
-    //         }
-    //         Self::Loading => unreachable!(),
-    //     }
-    // }
 
     fn view_tab_bar(&self) -> Element<Message> {
         match self {
@@ -215,8 +177,8 @@ impl SoundboardApp {
                         state.volume_enabled,
                         Message::VolumeToggled,
                         0.0..=1.0,
-                        state.get_global_volume(),
-                        Message::VolumeChanged,
+                        state.get_global_volume() as f64,
+                        |volume: f64| Message::VolumeChanged(volume as f32),
                     );
 
                     let speed_slider = create_settings_slider(

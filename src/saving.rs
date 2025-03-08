@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 pub struct SavedState {
     pub tabs: Vec<Tab>,
     pub current_tab: usize,
-    pub global_volume: f64,
+    pub global_volume: f32,
     pub global_speed: f64,
 }
 
